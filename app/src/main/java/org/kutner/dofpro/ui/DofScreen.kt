@@ -26,8 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -44,11 +42,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -78,7 +75,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import org.kutner.dofpro.calc.Dof
 import org.kutner.dofpro.model.DofResult
@@ -404,7 +400,7 @@ private fun ChoiceField(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .fillMaxWidth()
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEachIndexed { i, option ->
@@ -569,8 +565,12 @@ private fun Scales(
         val widthPx = with(density) { maxWidth.toPx() }
         // Text grows and shrinks with the window, as in the desktop app.
         val fontPx = (widthPx * 0.031f).coerceIn(21f, 60f)
-        val headerSp = with(density) { (fontPx * 0.95f).toSp() }
+        val headerSp = with(density) { (fontPx * 1.02f).toSp() }
         val valueSp = with(density) { (fontPx * 1.05f).toSp() }
+        // The hyperfocal reading is not a column heading but a figure in its own right,
+        // and the only one on screen with no second line under it to carry the value. It
+        // is sized above the headings so it reads as the number it is.
+        val hyperfocalSp = with(density) { (fontPx * 1.14f).toSp() }
 
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             LensColumn(state, headerSp, valueSp, fontPx, Modifier.weight(1f))
@@ -578,7 +578,10 @@ private fun Scales(
             // No blur column: the distance scale already carries blur down its left side,
             // graduated in the same units and against the distances it applies to, which
             // is more than a column of its own could say.
-            DistanceColumn(state, result, onDetails, headerSp, valueSp, fontPx, Modifier.weight(3.05f))
+            DistanceColumn(
+                state, result, onDetails, headerSp, valueSp, hyperfocalSp, fontPx,
+                Modifier.weight(3.05f),
+            )
         }
     }
 }
@@ -681,9 +684,9 @@ private fun ScalePanel(
 private fun HeaderText(
     text: String,
     size: TextUnit,
+    modifier: Modifier = Modifier,
     color: Color = Palette.Text,
     bold: Boolean = false,
-    modifier: Modifier = Modifier,
 ) {
     Text(
         text = text,
@@ -711,7 +714,14 @@ private fun LensColumn(
     ScalePanel(
         modifier = modifier,
         header = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            // Pinned to the same height as the other columns' first rows. Left to size
+            // itself the chip claimed Material's 48dp minimum touch target, which is
+            // taller than the row beside it, and every heading in this column started a
+            // line lower than the headings in the other two.
+            Box(
+                Modifier.fillMaxWidth().height(TOOL_BUTTON_ROW_HEIGHT),
+                contentAlignment = Alignment.Center,
+            ) {
                 // "1.4" alone reads as a setting of some kind; "1.4X" reads as what it
                 // is, the factor everything on this scale is being multiplied by.
                 // A filter chip, because that is what a teleconverter is: a modifier that
@@ -846,6 +856,7 @@ private fun DistanceColumn(
     onDetails: () -> Unit,
     headerSp: TextUnit,
     valueSp: TextUnit,
+    hyperfocalSp: TextUnit,
     fontPx: Float,
     modifier: Modifier,
 ) {
@@ -912,7 +923,7 @@ private fun DistanceColumn(
                 Text(
                     text = "hyperfocal ${formatDistance(result.hyperfocal, state.units)}",
                     color = Palette.HyperfocalLine,
-                    fontSize = headerSp,
+                    fontSize = hyperfocalSp,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -952,7 +963,7 @@ private fun DistanceColumn(
             // their cause is being retyped anyway. Two rows either way, so the scales
             // below stay put.
             if (editingSubject) {
-                HeaderText("subject distance", headerSp, Palette.SubjectLine)
+                HeaderText("subject distance", headerSp, color = Palette.SubjectLine)
                 SubjectEditor(
                     value = subjectText,
                     unitLabel = format.unit.label,
@@ -968,19 +979,19 @@ private fun DistanceColumn(
                     HeaderText(
                         if (state.stacking) "closest" else "near",
                         headerSp,
-                        if (state.stacking) Palette.SubjectLine else Palette.LimitLine,
+                        color = if (state.stacking) Palette.SubjectLine else Palette.LimitLine,
                         modifier = Modifier.weight(1f),
                     )
                     HeaderText(
                         if (state.stacking) "images" else "subject",
                         headerSp,
-                        if (state.stacking) Palette.StackLine else Palette.SubjectLine,
+                        color = if (state.stacking) Palette.StackLine else Palette.SubjectLine,
                         modifier = Modifier.weight(1f),
                     )
                     HeaderText(
                         "far",
                         headerSp,
-                        if (state.stacking) Palette.AxisName else Palette.LimitLine,
+                        color = if (state.stacking) Palette.AxisName else Palette.LimitLine,
                         modifier = Modifier.weight(1f),
                     )
                 }
