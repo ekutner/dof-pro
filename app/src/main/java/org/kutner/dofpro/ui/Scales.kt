@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -14,8 +15,17 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
+
+/**
+ * How near the marker a finger has to land to take hold of it.
+ *
+ * Generous, because a marker is a hairline and a fingertip is not. On the distance scale
+ * it is also what separates taking hold of a line from taking hold of the scale itself.
+ */
+val MARKER_GRAB_BAND = 24.dp
 
 /**
  * Where a harmonic scale currently sits: the reciprocal value at the top of the column,
@@ -119,11 +129,19 @@ fun HarmonicScale(
 
     Canvas(
         modifier = modifier.pointerInput(Unit) {
+            val grabBandPx = MARKER_GRAB_BAND.toPx()
+
             scaleGestures(
-                onDown = { grab.start(latest.value, 0f) },
+                onDown = { pos ->
+                    val s = latest
+                    val geometry = s.bounds?.let { boundedHarmonic(it.start, it.endInclusive) }
+                        ?: harmonicGeometry(s.value, s.zoom, s.ceiling, s.anchor)
+                    val markerY = geometry.yOf(s.value, size.height.toFloat())
+                    grab.start(s.value, 0f, abs(pos.y - markerY) <= grabBandPx)
+                },
                 onDrag = { _, delta, _ ->
                     val s = latest
-                    if (s.editable && size.height > 0 && grab.value > 0.0) {
+                    if (s.editable && grab.holding && size.height > 0 && grab.value > 0.0) {
                         val geometry = s.bounds?.let { boundedHarmonic(it.start, it.endInclusive) }
                             ?: harmonicGeometry(grab.value, s.zoom, s.ceiling, s.anchor)
                         // Dragging down walks the marker onto the smaller values printed
@@ -205,11 +223,18 @@ fun ApertureScale(
 
     Canvas(
         modifier = modifier.pointerInput(Unit) {
+            val grabBandPx = MARKER_GRAB_BAND.toPx()
+
             scaleGestures(
-                onDown = { grab.start(latest.value, 0f) },
+                onDown = { pos ->
+                    val s = latest
+                    val markerY = size.height / 2f -
+                        (ln(s.value / s.center) * (size.height / s.span)).toFloat()
+                    grab.start(s.value, 0f, abs(pos.y - markerY) <= grabBandPx)
+                },
                 onDrag = { _, delta, _ ->
                     val s = latest
-                    if (s.editable && size.height > 0 && grab.value > 0.0) {
+                    if (s.editable && grab.holding && size.height > 0 && grab.value > 0.0) {
                         val pxPerLn = size.height / s.span
                         // Dragging up on the scale walks the marker toward smaller
                         // apertures. Measured as movement rather than as absolute
@@ -316,9 +341,21 @@ private class Grab {
     var y: Float = 0f
         private set
 
-    fun start(value: Double, y: Float) {
+    /**
+     * Whether the finger went down on the marker.
+     *
+     * These two scales have one thing on them that can be moved, so a drag that did not
+     * start on it has nothing to mean. Taking any drag as "move the value" made the
+     * lightest brush across a column change the focal length or the aperture, usually
+     * while the finger was on its way somewhere else.
+     */
+    var holding = false
+        private set
+
+    fun start(value: Double, y: Float, holding: Boolean = true) {
         this.value = value
         this.y = y
+        this.holding = holding
     }
 
     /** Steps the carried value along without disturbing the grab point. */

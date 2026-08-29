@@ -1084,6 +1084,108 @@ class StateTest {
         return ln(r.far!! / r.near!!) / ln(w.hi / w.lo)
     }
 
+    // ---- Where the depth of field peaks ---------------------------------------------
+
+    private fun peakStop(widthPx: Int, widestStop: Double): Double {
+        val camera = Camera(
+            type = CameraType.DIGITAL,
+            frameWidthMm = 36.0, frameHeightMm = 24.0,
+            frameWidthPx = widthPx, frameHeightPx = widthPx * 2 / 3,
+        )
+        val lens = Lens(
+            name = "test", minFocal = 50.0, maxFocal = 50.0,
+            minFStop = widestStop, maxFStop = 32.0,
+        )
+        val pixels = ViewingTarget.defaults().first { it.kind == TargetKind.PIXELS }
+        return DofState(
+            Settings(cameras = listOf(camera), lenses = listOf(lens), targets = listOf(pixels))
+        ).bestDepthFStop
+    }
+
+    @Test
+    fun `a coarser sensor goes on buying depth further down the aperture scale`() {
+        // The peak sits at f = c*750/sqrt(2), and judged at pixel level c is twice the
+        // pixel pitch, so a sensor with bigger pixels peaks at a higher f number. Asked
+        // with a lens wide enough to actually reach the peak.
+        val mp33 = peakStop(7008, 1.4)
+        val mp45 = peakStop(8256, 1.4)
+        val mp61 = peakStop(9504, 1.4)
+        assertTrue("33MP peaked at f/$mp33, 45MP at f/$mp45", mp33 > mp45)
+        assertTrue("45MP peaked at f/$mp45, 61MP at f/$mp61", mp45 > mp61)
+    }
+
+    @Test
+    fun `a lens that cannot open to the peak reports the widest stop it has`() {
+        // Judged at pixel level a full frame sensor wants somewhere around f/4, which a
+        // slow lens cannot reach. Every stop it does have is then past the peak, so the
+        // most depth of field on offer is wide open — and every sensor answers the same,
+        // which reads as the figure ignoring the camera when it is really the lens
+        // running out of aperture.
+        for (px in listOf(7008, 8256, 9504)) {
+            assertEquals("a f/5.6 lens on a ${px}px sensor", 5.6, peakStop(px, 5.6), 1e-9)
+        }
+        // Given a lens that can open up, they separate again. Not the 33MP body: its own
+        // peak really is f/5.6, which is the coincidence that makes this worth pinning.
+        assertTrue(peakStop(9504, 1.4) < 5.6)
+        assertEquals(5.6, peakStop(7008, 1.4), 1e-9)
+    }
+
+    // ---- Keeping the lines apart ---------------------------------------------------
+
+    @Test
+    fun `no setting puts a limit line within a fingertip of the subject line`() {
+        // The quarter rule sizes the sharp zone as a whole and says nothing about how it
+        // is divided, and it divides very unevenly at any distance past the close-up
+        // range. What keeps the near line reachable is that the optics tie the two
+        // limits together: the more lopsided the split, the wider the zone, and the two
+        // effects very nearly cancel. This pins the margin that leaves, because it is
+        // the whole reason a limit can be picked up on its own.
+        var worst = Double.MAX_VALUE
+        var where = ""
+        for (camera in Camera.defaults()) {
+            for (lens in Lens.defaults()) {
+                val s = DofState(Settings(cameras = listOf(camera), lenses = listOf(lens)))
+                for (focal in listOf(lens.minFocal, lens.maxFocal)) {
+                    s.changeFocalLength(focal, settle = false)
+                    for (stop in s.apertureStops()) {
+                        s.fStop = stop
+                        var d = s.minSubject
+                        while (d < DofState.MAX_DISTANCE) {
+                            s.moveSubject(d)
+                            val r = s.compute()
+                            val near = r.near
+                            if (near != null && near.isFinite() && near > 0.0) {
+                                val w = s.distanceWindow(r)
+                                val gap = ln(r.subject / near) / ln(w.hi / w.lo)
+                                if (gap < worst) {
+                                    worst = gap
+                                    where = "${camera.name} / ${lens.name} $focal mm " +
+                                        "f/$stop at $d mm"
+                                }
+                            }
+                            d *= 1.7
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(
+            "the near line came within $worst of the subject at $where",
+            worst >= DofState.MIN_MARKER_GAP,
+        )
+    }
+
+    @Test
+    fun `an even depth of field is left alone`() {
+        // Close up the sharp zone divides nearly evenly, both gaps clear the floor at the
+        // quarter share already, and the view should not tighten past it.
+        val s = state()
+        s.changeFocalLength(100.0, settle = false)
+        s.fStop = 4.0
+        s.moveSubject(500.0)
+        assertEquals(0.25, shareOf(s), 1e-9)
+    }
+
     private fun screenFractions(s: DofState): Pair<Double, Double> {
         val r = s.compute()
         val w = s.distanceWindow(r)
@@ -1138,18 +1240,22 @@ class StateTest {
     }
 
     @Test
-    fun `pinching zooms between the two ends of the band`() {
+    fun `pinching zooms past both ends of the band the automatic fit uses`() {
+        // The band from a quarter to four fifths is what the fit stays inside when it
+        // sizes itself, so the limit markers always have somewhere to move. A deliberate
+        // pinch outranks it. Held to the band the gesture was very nearly useless: the
+        // resting view already sits at the band's widest, so spreading two fingers did
+        // nothing whatever, and closing them ran out after 3.2 times.
         val s = state()
         val rest = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
 
         // Fingers spreading apart zoom in: a narrower span, a bigger share.
         repeat(10) { s.zoomDistance(1.5, rest) }
-        assertTrue("pinching in did not zoom", shareOf(s) > 0.25 + 1e-6)
-        assertEquals("and it stops where a marker would leave the screen", 0.8, shareOf(s), 1e-9)
+        assertTrue("pinching in stopped at the band", shareOf(s) > 0.8 + 1e-6)
 
-        // Fingers together zoom back out, and stop at the quarter that is guaranteed.
-        repeat(20) { s.zoomDistance(1 / 1.5, rest) }
-        assertEquals(0.25, shareOf(s), 1e-9)
+        // And together, to a view wider than the fit would ever have chosen.
+        repeat(30) { s.zoomDistance(1 / 1.5, rest) }
+        assertTrue("pinching out stopped at the band", shareOf(s) < 0.25 - 1e-6)
     }
 
     @Test
@@ -1217,11 +1323,98 @@ class StateTest {
             ln(w.hi / w.lo) < DofState.MIN_WINDOW_SPAN)
         assertEquals(0.25, ln(r.far!! / r.near!!) / ln(w.hi / w.lo), 1e-9)
 
-        // And holding it, or pinching, cannot break out of that.
+        // Holding it, without pinching, cannot break out of that.
         s.holdDistanceSpan(ln(w.hi / w.lo))
-        repeat(5) { s.zoomDistance(2.0, ln(w.hi / w.lo)) }
-        val after = s.distanceWindow(s.compute())
-        assertEquals(0.25, ln(r.far!! / r.near!!) / ln(after.hi / after.lo), 1e-9)
+        val held = s.distanceWindow(s.compute())
+        assertEquals(0.25, ln(r.far!! / r.near!!) / ln(held.hi / held.lo), 1e-9)
+    }
+
+    // ---- Pinch -------------------------------------------------------------------
+
+    @Test
+    fun `pinching escapes the band the automatic fit holds the window in`() {
+        // The band exists so the depth of field keeps roughly its quarter of the height
+        // and the limit markers have somewhere to move. Applied to a deliberate gesture
+        // it made the pinch useless: at rest the window already sits at the widest the
+        // band allows, so spreading two fingers did nothing at all.
+        val s = state()
+        s.changeFocalLength(50.0, settle = false)
+        s.fStop = 4.0
+        s.moveSubject(4.0 * 304.8)
+        val rest = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
+
+        // Fingers together: a wider view than the automatic fit would ever have chosen.
+        repeat(6) { s.zoomDistance(0.5, rest) }
+        val wide = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
+        assertTrue("pinching out gave $wide against a resting $rest", wide > rest * 1.5)
+
+        // And back the other way, well past the 3.2 times the band used to allow.
+        repeat(12) { s.zoomDistance(2.0, wide) }
+        val tight = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
+        assertTrue("pinching in gave $tight against a resting $rest", tight < rest / 4.0)
+    }
+
+    @Test
+    fun `the scale's absolute limits still hold, however hard it is pinched`() {
+        val s = state()
+        s.moveSubject(4.0 * 304.8)
+        val rest = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
+        repeat(60) { s.zoomDistance(2.0, rest) }
+        val w = s.distanceWindow(s.compute())
+        assertTrue("inverted after pinching in", w.hi > w.lo)
+        repeat(120) { s.zoomDistance(0.5, rest) }
+        val out = s.distanceWindow(s.compute())
+        assertTrue("inverted after pinching out", out.hi > out.lo)
+        assertTrue(ln(out.hi / out.lo) <= DofState.MAX_WINDOW_SPAN + 1e-9)
+    }
+
+    @Test
+    fun `letting go of the zoom hands the window back to the automatic fit`() {
+        val s = state()
+        s.moveSubject(4.0 * 304.8)
+        val rest = ln(s.distanceWindow(s.compute()).let { it.hi / it.lo })
+        repeat(4) { s.zoomDistance(2.0, rest) }
+        assertTrue(s.zoomed)
+        s.resetZoom()
+        assertTrue(!s.zoomed)
+        assertEquals(rest, ln(s.distanceWindow(s.compute()).let { it.hi / it.lo }), 1e-9)
+    }
+
+    // ---- Focal length ------------------------------------------------------------
+
+    @Test
+    fun `the focal length lands on whole millimetres`() {
+        // No lens is marked in tenths of a millimetre and no photographer thinks in them,
+        // so a scale reading 47.3 mm offers a precision that does not exist.
+        val s = state()
+        s.lenses[0] = Lens(name = "Any lens", minFocal = 1.0, maxFocal = 3000.0)
+        s.selectLens(0)
+        for (v in listOf(8.4, 8.6, 24.49, 47.3, 199.5, 1234.7)) {
+            s.changeFocalLength(v, settle = false)
+            assertEquals(
+                "dragging to $v gave ${s.focalLength}",
+                s.focalLength, Math.rint(s.focalLength), 0.0,
+            )
+            s.settleFocalLength()
+            assertEquals(
+                "settling from $v gave ${s.focalLength}",
+                s.focalLength, Math.rint(s.focalLength), 0.0,
+            )
+        }
+    }
+
+    @Test
+    fun `a short focal length still moves a whole millimetre at a time`() {
+        // Below 10 mm the readable-number rule used to step in tenths.
+        val s = state()
+        s.lenses[0] = Lens(name = "Any lens", minFocal = 1.0, maxFocal = 3000.0)
+        s.selectLens(0)
+        s.changeFocalLength(6.0, settle = false)
+        val before = s.focalLength
+        s.changeFocalLength(6.4, settle = false)
+        assertEquals(before, s.focalLength, 0.0)
+        s.changeFocalLength(6.6, settle = false)
+        assertEquals(7.0, s.focalLength, 0.0)
     }
 
     // ---- The blur graduations on the distance scale --------------------------------

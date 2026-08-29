@@ -187,7 +187,13 @@ class DofState(settings: Settings = Settings()) {
      * a distance the lens cannot focus at.
      */
     fun changeFocalLength(mm: Double, settle: Boolean = true) {
-        val wanted = if (settle) snapFocal(mm) else mm.coerceIn(MIN_FOCAL, MAX_FOCAL)
+        // Whole millimetres, always. No lens is marked in tenths and no photographer
+        // thinks in them, so a scale that reads 47.3 mm is offering precision that does
+        // not exist. The lens's own ends are exempt, since those are whatever the lens
+        // says they are.
+        val wanted =
+            if (settle) snapFocal(mm)
+            else mm.roundToInt().toDouble().coerceIn(MIN_FOCAL, MAX_FOCAL)
         focalLength = lens.clampFocal(wanted)
         if (subject < minSubject) subject = minSubject
     }
@@ -253,11 +259,31 @@ class DofState(settings: Settings = Settings()) {
         if (distanceSpan <= 0.0 && lnSpan > 0.0 && lnSpan.isFinite()) distanceSpan = lnSpan
     }
 
+    /**
+     * True once the user has pinched, which frees the window from the band [fitWindow]
+     * otherwise holds it in.
+     *
+     * That band exists so the depth of field keeps roughly its quarter of the height and
+     * the limit markers have room to move. It is right for a view that sizes itself, and
+     * wrong for one the user has taken hold of: within it the widest the scale can ever be
+     * is its resting width, so pinching outwards did nothing whatever and pinching inwards
+     * ran out after 3.2 times. A deliberate two finger gesture outranks the automatic fit.
+     */
+    var zoomed by mutableStateOf(false)
+        private set
+
     /** Pinch. A [factor] above 1 is fingers spreading apart, which narrows the span. */
     fun zoomDistance(factor: Double, lnSpan: Double) {
         if (factor <= 0.0 || !factor.isFinite()) return
         holdDistanceSpan(lnSpan)
+        zoomed = true
         distanceSpan = (distanceSpan / factor).coerceIn(MIN_WINDOW_SPAN, MAX_WINDOW_SPAN)
+    }
+
+    /** Hands the window back to the automatic fit. */
+    fun resetZoom() {
+        zoomed = false
+        distanceSpan = 0.0
     }
 
     /**
@@ -315,8 +341,36 @@ class DofState(settings: Settings = Settings()) {
         // Taking the floor first left the band inverted and coerceIn threw.
         val widest = minOf(lnDepth / DOF_SHARE_OF_SCALE, MAX_WINDOW_SPAN)
         val tightest = minOf(maxOf(lnDepth / MAX_DOF_SHARE, MIN_WINDOW_SPAN), widest)
-        val span = if (distanceSpan > 0.0) distanceSpan.coerceIn(tightest, widest) else widest
-        return windowFor(subject, span)
+        // A pinched view answers to the scale's absolute limits instead of the band, so
+        // the gesture can actually reach somewhere the automatic fit would not have gone.
+        val lo = if (zoomed) MIN_WINDOW_SPAN else tightest
+        val hi = if (zoomed) MAX_WINDOW_SPAN else widest
+        val span = if (distanceSpan > 0.0) distanceSpan.coerceIn(lo, hi) else widest
+        return windowFor(subject, separated(span, subject, near, far))
+    }
+
+    /**
+     * Tightens [span] until neither limit crowds the subject line off the screen.
+     *
+     * The quarter rule sizes the sharp zone as a whole, which says nothing about how that
+     * quarter is divided, and it is rarely divided evenly: beyond the close-up range the
+     * far limit takes almost all of it. At ten metres with a metre in front and ninety
+     * behind, the near line lands about one per cent of the height from the subject —
+     * a third of a fingertip — and there is no way to take hold of one without the other.
+     * Zooming in is the only thing that separates them, so the view does it itself.
+     *
+     * Only when the view is sizing itself. A pinch is the user saying where they want the
+     * view, and a floor that fought them there would make a shallow depth of field
+     * impossible to zoom out of.
+     */
+    private fun separated(span: Double, subject: Double, near: Double, far: Double): Double {
+        if (zoomed) return span
+        val gaps = listOfNotNull(
+            ln(subject / near).takeIf { it > 0.0 && it.isFinite() },
+            if (far.isFinite()) ln(far / subject).takeIf { it > 0.0 } else null,
+        )
+        val room = gaps.minOrNull() ?: return span
+        return minOf(span, room / MIN_MARKER_GAP)
     }
 
     /**
@@ -338,13 +392,14 @@ class DofState(settings: Settings = Settings()) {
     // ---- Snapping ----------------------------------------------------------------
 
     /** Rounds to roughly three significant digits, so 15.02 lands cleanly on 15.0. */
-    private fun snapNice(v: Double): Double {
+    private fun snapNice(v: Double, minStep: Double = 0.0): Double {
         if (v <= 0.0 || !v.isFinite()) return v
-        val step = 10.0.pow(floor(log10(v))) / 10.0
+        val step = maxOf(10.0.pow(floor(log10(v))) / 10.0, minStep)
         return (v / step).roundToInt() * step
     }
 
-    fun snapFocal(v: Double): Double = snapNice(v).coerceIn(MIN_FOCAL, MAX_FOCAL)
+    /** A whole number of millimetres; below 10 mm the tenths step would be finer. */
+    fun snapFocal(v: Double): Double = snapNice(v, 1.0).coerceIn(MIN_FOCAL, MAX_FOCAL)
 
     /** The aperture always lands on a real f stop, dragged or calculated. */
     fun snapFStop(v: Double): Double = nearestFStop(v.coerceIn(MIN_F, MAX_F))
@@ -561,6 +616,15 @@ class DofState(settings: Settings = Settings()) {
         const val SUBJECT_FOCAL_MARGIN = 1.05
 
         /** How much of the distance scale's height the depth of field takes up. */
+        /**
+         * How far a limit line has to sit from the subject line, as a fraction of the
+         * scale's height, before the view stops zooming in to separate them.
+         *
+         * A shade above the grab band, so the nearer of two lines is the one a fingertip
+         * actually lands on.
+         */
+        const val MIN_MARKER_GAP = 0.06
+
         const val DOF_SHARE_OF_SCALE = 0.25
 
         /**

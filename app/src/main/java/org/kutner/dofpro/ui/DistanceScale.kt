@@ -30,7 +30,8 @@ import kotlin.math.ln
 import kotlin.math.roundToInt
 
 /** Which line on the distance scale a drag is moving. */
-enum class DistanceHandle { SUBJECT, NEAR, FAR, NONE }
+/** What a drag on the distance scale took hold of. [SCALE] is the view itself. */
+enum class DistanceHandle { SUBJECT, NEAR, FAR, SCALE, NONE }
 
 /**
  * Maps distance to a position on the scale: logarithmic, far end at the top, over
@@ -245,15 +246,15 @@ fun DistanceScale(
 
     Canvas(
         modifier = modifier.pointerInput(Unit) {
-            // On a scale that spans everything from arm's length to infinity, a shallow
-            // depth of field puts all three lines within a few pixels of each other —
-            // far closer together than a fingertip. So the scale is divided into zones
-            // rather than asking the user to hit a line: a band on the subject drags the
-            // subject, everything nearer than it drags the near limit, everything beyond
-            // drags the far limit. A tap anywhere still moves the subject there.
-            // Wide enough to find with a fingertip. It costs the limit zones nothing,
-            // since those extend over the whole rest of the scale either way.
-            val subjectBandPx = 24.dp.toPx()
+            // A drag takes hold of whichever line it landed on, and of the view itself
+            // if it landed on none of them. The scale used to be divided into zones
+            // instead — subject in the middle, near below, far above — so that a shallow
+            // depth of field, which can put all three lines within a fingertip of each
+            // other, still let you drag a limit. The cost was that a finger anywhere on
+            // the column moved something, and there was no way to slide the view without
+            // changing a value. Pinching apart is the way to separate lines that are too
+            // close to hit.
+            val bandPx = MARKER_GRAB_BAND.toPx()
 
             fun distanceAt(y: Float): Double =
                 latest.axis.distanceAt((y / size.height).toDouble())
@@ -263,24 +264,33 @@ fun DistanceScale(
 
             scaleGestures(
                 onDown = { pos ->
-                    val sy = yOf(latest.subject)
-                    val kind = when {
-                        abs(pos.y - sy) <= subjectBandPx -> DistanceHandle.SUBJECT
-                        pos.y > sy -> DistanceHandle.NEAR
-                        else -> DistanceHandle.FAR
+                    val h = latest
+                    // Nearest line wins, so that lines close together still resolve to
+                    // one of them rather than to whichever the tests happened to try first.
+                    val candidates = buildList {
+                        add(DistanceHandle.SUBJECT to h.subject)
+                        h.near?.takeIf { it.isFinite() }?.let { add(DistanceHandle.NEAR to it) }
+                        h.far?.takeIf { it.isFinite() }?.let { add(DistanceHandle.FAR to it) }
                     }
+                    val caught = candidates
+                        .map { (kind, value) -> kind to abs(pos.y - yOf(value)) }
+                        .filter { it.second <= bandPx }
+                        .minByOrNull { it.second }
+                        ?.first
+                    val kind = caught ?: DistanceHandle.SCALE
                     // A limit marker can only travel with the finger if the scale stops
                     // resizing itself around it, so the span is taken as it stands the
                     // moment one is picked up. The subject needs no such thing: it moves
                     // by its anchor, which the span does not touch.
-                    if (kind != DistanceHandle.SUBJECT) latest.onHoldSpan(latest.axis.lnSpan)
+                    if (kind == DistanceHandle.NEAR || kind == DistanceHandle.FAR) {
+                        h.onHoldSpan(h.axis.lnSpan)
+                    }
                     grab.start(
                         kind,
                         when (kind) {
-                            DistanceHandle.NEAR -> latest.near ?: latest.subject
-                            DistanceHandle.FAR -> latest.far?.takeIf { it.isFinite() }
-                                ?: latest.subject
-                            else -> latest.subject
+                            DistanceHandle.NEAR -> h.near ?: h.subject
+                            DistanceHandle.FAR -> h.far?.takeIf { it.isFinite() } ?: h.subject
+                            else -> h.subject
                         },
                     )
                 },
@@ -290,6 +300,12 @@ fun DistanceScale(
                 },
                 onDrag = { _, delta, speed ->
                     val h = latest
+                    // Sliding the view: the graduations and every line on them travel
+                    // with the finger, and not one reading changes.
+                    if (grab.handle == DistanceHandle.SCALE) {
+                        h.onSubjectAnchor((delta.y / size.height).toDouble())
+                        return@scaleGestures
+                    }
                     // Accumulated rather than read off the finger's position: a canvas
                     // that moves mid-drag then cannot be mistaken for a drag.
                     grab.travelled += delta.y
@@ -319,7 +335,7 @@ fun DistanceScale(
                         }
                         DistanceHandle.NEAR -> h.onNear(value)
                         DistanceHandle.FAR -> h.onFar(value)
-                        DistanceHandle.NONE -> Unit
+                        DistanceHandle.SCALE, DistanceHandle.NONE -> Unit
                     }
                 },
                 // Only a tap on the subject itself moves the subject. Letting any tap
@@ -327,7 +343,7 @@ fun DistanceScale(
                 // registered as a tap and teleported the blue line to the finger, which
                 // looked like the subject wandering on its own.
                 onTap = { pos ->
-                    if (abs(pos.y - yOf(latest.subject)) <= subjectBandPx) {
+                    if (abs(pos.y - yOf(latest.subject)) <= bandPx) {
                         latest.onSubject(distanceAt(pos.y))
                     }
                 },

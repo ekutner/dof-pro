@@ -4,7 +4,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputScope
-import kotlin.math.abs
 
 /**
  * One gesture handler for all four scales: one finger drags (a marker, or the scale
@@ -47,8 +46,13 @@ suspend fun PointerInputScope.scaleGestures(
             var sum = Offset.Zero
             pressed.forEach { sum += it.position }
             val centroid = sum / pressed.size.toFloat()
+            // Measured as the true distance from the centroid, not its vertical part
+            // alone. The scale is vertical, so it is tempting to look only at y — but
+            // then two fingers placed side by side have no spread at all, and pinching
+            // them registers no zoom. Anyone whose fingers are not aligned with the
+            // column gets a gesture that quietly does nothing.
             var spread = 0f
-            pressed.forEach { spread += abs(it.position.y - centroid.y) }
+            pressed.forEach { spread += (it.position - centroid).getDistance() }
             spread /= pressed.size
 
             if (wasMulti) {
