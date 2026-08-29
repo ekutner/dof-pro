@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -17,7 +16,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,19 +50,22 @@ import org.kutner.dofpro.model.formatSig
  */
 @Composable
 fun CameraSearch(onAdopt: (CameraSpecs) -> Unit) {
-    var query by remember { mutableStateOf("") }
+    // A TextFieldState rather than a plain String: only that overload of
+    // OutlinedTextField takes a label position, and this label has to stay on the frame
+    // whether or not anything has been typed.
+    val query = rememberTextFieldState()
     var matches by remember { mutableStateOf<List<CameraMatch>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun find() {
-        if (query.isBlank() || busy) return
+        if (query.text.isBlank() || busy) return
         busy = true
         message = null
         matches = emptyList()
         scope.launch {
-            val found = CameraLookup.search(query)
+            val found = CameraLookup.search(query.text.toString())
             busy = false
             matches = found
             if (found.isEmpty()) message = "Nothing found. Check the spelling, or type the specs in below."
@@ -83,7 +90,7 @@ fun CameraSearch(onAdopt: (CameraSpecs) -> Unit) {
                 else -> {
                     onAdopt(specs)
                     matches = emptyList()
-                    query = ""
+                    query.clearText()
                     message = if (specs.hasPixels) {
                         "Filled in from ${specs.name}: " +
                             "${formatSig(specs.widthMm!!, 4)} × ${formatSig(specs.heightMm!!, 4)} mm, " +
@@ -99,11 +106,26 @@ fun CameraSearch(onAdopt: (CameraSpecs) -> Unit) {
 
     Column(Modifier.fillMaxWidth()) {
         OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text("Find a camera by name") },
-            placeholder = { Text("e.g. Sony a7R V") },
-            singleLine = true,
+            state = query,
+            // Pinned to the frame rather than left to float up out of the box when the
+            // field is used. This one is empty most of the time — it is a search, not a
+            // value you keep — so an attached label would spend its life sitting inside
+            // the box looking like the hint, and the hint would have nowhere to go.
+            labelPosition = TextFieldLabelPosition.Attached(alwaysMinimize = true),
+            label = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Auto fill camera information")
+                    HelpBadge(
+                        "Looks the camera up online and fills in its sensor size and " +
+                            "resolution, so they need not be copied off a spec sheet. " +
+                            "Figures come from Wikipedia, so it is worth a glance at the " +
+                            "Computed values below before trusting them. This is the only " +
+                            "thing in the app that uses the network."
+                    )
+                }
+            },
+            placeholder = { Text("Search for camera") },
+            lineLimits = TextFieldLineLimits.SingleLine,
             trailingIcon = {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -114,7 +136,7 @@ fun CameraSearch(onAdopt: (CameraSpecs) -> Unit) {
                 }
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { find() }),
+            onKeyboardAction = { find() },
             modifier = Modifier.fillMaxWidth(),
         )
 
