@@ -1,5 +1,7 @@
 package org.kutner.dofpro.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DropdownMenu
@@ -42,35 +44,43 @@ fun TargetDialog(state: DofState, onDismiss: () -> Unit) {
         summaryOf = null,
         addLabel = "Add target",
         onSelect = { state.targetIndex = it },
-        onAdd = {
-            state.targets.add(state.target.copy(name = "New target"))
-            state.targets.lastIndex
+        newItem = { state.target.copy(name = "New target") },
+        onSave = { at, target ->
+            if (at == null) state.targets.add(target) else state.targets[at] = target
+            state.persist()
         },
         onRemove = { gone ->
             state.removeTargets(gone)
             state.persist()
         },
         onDismiss = onDismiss,
-        editor = { index, close -> TargetEditor(state, index, close) },
+        editor = { item, canDelete, onSave, onDelete, onCancel ->
+            TargetEditor(state, item, canDelete, onSave, onDelete, onCancel)
+        },
     )
 }
 
 @Composable
-private fun TargetEditor(state: DofState, index: Int, onClose: () -> Unit) {
-    val target = state.targets[index]
+private fun TargetEditor(
+    state: DofState,
+    initial: ViewingTarget,
+    canDelete: Boolean,
+    onSave: (ViewingTarget) -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var target by remember { mutableStateOf(initial) }
 
     fun update(block: ViewingTarget.() -> ViewingTarget) {
-        state.targets[index] = state.targets[index].block()
+        target = target.block()
     }
 
     EquipmentEditor(
         title = target.name.ifBlank { "Viewing target" },
-        canDelete = state.targets.size > 1,
-        onDelete = {
-            state.targets.removeAt(index)
-            state.targetIndex = state.targetIndex.coerceAtMost(state.targets.lastIndex)
-        },
-        onClose = onClose,
+        canDelete = canDelete,
+        onDelete = onDelete,
+        onCancel = onCancel,
+        onConfirm = { onSave(target) },
     ) {
         SettingsGroup("Target") {
             OutlinedTextField(
@@ -86,18 +96,14 @@ private fun TargetEditor(state: DofState, index: Int, onClose: () -> Unit) {
         if (target.kind == TargetKind.PRINT || target.kind == TargetKind.SCREEN) {
             SettingsGroup(if (target.kind == TargetKind.PRINT) "The print" else "The screen") {
                 NumberField(
-                    "Width", target.widthMm, index, Modifier.fillMaxWidth(),
-                    if (target.kind == TargetKind.PRINT) {
-                        "mm across the print"
-                    } else {
-                        "mm across the screen — screens are sold by the diagonal, this is the width"
-                    },
+                    if (target.kind == TargetKind.PRINT) "Print width mm" else "Screen width mm",
+                    target.widthMm, Unit, Modifier.fillMaxWidth(),
                 ) { update { copy(widthMm = it) } }
 
                 if (target.kind == TargetKind.SCREEN) {
                     NumberField(
-                        "Resolution", target.pixelsAcross.toDouble(), index,
-                        Modifier.fillMaxWidth(), "pixels across",
+                        "Pixels across", target.pixelsAcross.toDouble(), Unit,
+                        Modifier.fillMaxWidth(),
                     ) { update { copy(pixelsAcross = it.toInt().coerceAtLeast(1)) } }
                 }
             }
@@ -106,26 +112,31 @@ private fun TargetEditor(state: DofState, index: Int, onClose: () -> Unit) {
         if (target.kind != TargetKind.CUSTOM) {
             SettingsGroup("The viewer") {
                 if (target.kind != TargetKind.PIXELS) {
-                    NumberField(
-                        "Viewing distance", target.viewingDistanceMm, index,
-                        Modifier.fillMaxWidth(), "mm away",
-                    ) { update { copy(viewingDistanceMm = it) } }
-                    NumberField(
-                        "Visual resolution", target.visualResolution, index,
-                        Modifier.fillMaxWidth(),
-                        "arc minutes; about 1.0 for normal eyesight",
-                    ) { update { copy(visualResolution = it) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        NumberField(
+                            "Viewed from mm", target.viewingDistanceMm, Unit,
+                            Modifier.weight(1f),
+                        ) { update { copy(viewingDistanceMm = it) } }
+                        NumberField(
+                            "Eyesight arcmin", target.visualResolution, Unit,
+                            Modifier.weight(1f),
+                        ) { update { copy(visualResolution = it) } }
+                    }
                 }
                 NumberField(
-                    "Allowable blur", target.allowableBlur, index, Modifier.fillMaxWidth(),
-                    "how many just-resolvable details of blur still count as sharp. " +
-                        "2.0 is the usual value.",
+                    "Allowable blur", target.allowableBlur, Unit, Modifier.fillMaxWidth(),
+                    help = "How many just-resolvable details of blur still count as " +
+                        "sharp. 1.0 is the finest detail this target can show at all; " +
+                        "2.0, the usual value, accepts twice that. Raising it widens the " +
+                        "depth of field and pushes the diffraction limit further down " +
+                        "the scale, in exchange for a slightly softer result.",
                 ) { update { copy(allowableBlur = it) } }
             }
         } else {
             SettingsGroup("The figure") {
                 NumberField(
-                    "Circle of confusion", target.customCoc, index, Modifier.fillMaxWidth(), "mm",
+                    "Circle of confusion mm", target.customCoc, Unit,
+                    Modifier.fillMaxWidth(),
                 ) { update { copy(customCoc = it) } }
             }
         }
@@ -149,7 +160,7 @@ private fun TargetEditor(state: DofState, index: Int, onClose: () -> Unit) {
             )
         }
         OutputCard(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 12.dp),
             title = "Computed",
             rows = rows,
         )

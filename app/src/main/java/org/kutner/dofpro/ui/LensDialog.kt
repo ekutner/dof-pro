@@ -8,6 +8,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,36 +30,45 @@ fun LensDialog(state: DofState, onDismiss: () -> Unit) {
         summaryOf = { it.specification },
         addLabel = "Add lens",
         onSelect = { state.selectLens(it) },
-        onAdd = {
-            state.lenses.add(Lens.blank())
-            state.lenses.lastIndex
+        newItem = { Lens.blank() },
+        onSave = { at, lens ->
+            if (at == null) state.lenses.add(lens) else state.lenses[at] = lens
+            // The scales are drawn from the lens in use, so if that is the one that has
+            // just changed they have to be brought back inside its range.
+            if (at == state.lensIndex) state.applyLensLimits()
+            state.persist()
         },
         onRemove = { gone ->
             state.removeLenses(gone)
             state.persist()
         },
         onDismiss = onDismiss,
-        editor = { index, close -> LensEditor(state, index, close) },
+        editor = { item, canDelete, onSave, onDelete, onCancel ->
+            LensEditor(item, canDelete, onSave, onDelete, onCancel)
+        },
     )
 }
 
 @Composable
-private fun LensEditor(state: DofState, index: Int, onClose: () -> Unit) {
-    val lens = state.lenses[index]
+private fun LensEditor(
+    initial: Lens,
+    canDelete: Boolean,
+    onSave: (Lens) -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var lens by remember { mutableStateOf(initial) }
 
     fun update(block: Lens.() -> Lens) {
-        state.lenses[index] = state.lenses[index].block()
-        if (index == state.lensIndex) state.applyLensLimits()
+        lens = lens.block()
     }
 
     EquipmentEditor(
         title = lens.name.ifBlank { "Lens" },
-        canDelete = state.lenses.size > 1,
-        onDelete = {
-            state.lenses.removeAt(index)
-            state.selectLens(state.lensIndex.coerceAtMost(state.lenses.lastIndex))
-        },
-        onClose = onClose,
+        canDelete = canDelete,
+        onDelete = onDelete,
+        onCancel = onCancel,
+        onConfirm = { onSave(lens) },
     ) {
         SettingsGroup("Lens") {
         OutlinedTextField(
@@ -92,10 +105,9 @@ private fun LensEditor(state: DofState, index: Int, onClose: () -> Unit) {
         SettingsGroup("Focal length") {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             NumberField(
-                label = if (lens.isZoom) "Focal length from" else "Focal length",
+                label = if (lens.isZoom) "From mm" else "Focal length mm",
                 value = lens.minFocal,
-                resetKey = index,
-                supporting = "mm",
+                resetKey = Unit,
                 modifier = Modifier.weight(1f),
             ) { v ->
                 update {
@@ -105,34 +117,24 @@ private fun LensEditor(state: DofState, index: Int, onClose: () -> Unit) {
             }
             if (lens.isZoom) {
                 NumberField(
-                    label = "to",
+                    label = "To mm",
                     value = lens.maxFocal,
-                    resetKey = index,
-                    supporting = "mm",
-                    modifier = Modifier.weight(1f),
+                    resetKey = Unit,
+                        modifier = Modifier.weight(1f),
                 ) { v ->
                     update { copy(maxFocal = v.coerceIn(minFocal, DofState.MAX_FOCAL)) }
                 }
             }
         }
 
-            SettingNote(
-                if (lens.isZoom) {
-                    "The focal length scale is drawn over exactly this range, the way a " +
-                        "zoom barrel is engraved."
-                } else {
-                    "A prime has one focal length, so its scale becomes a read-out."
-                }
-            )
         }
 
         SettingsGroup("Aperture") {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             NumberField(
-                label = "Widest aperture",
+                label = "Widest f/",
                 value = lens.minFStop,
-                resetKey = index,
-                supporting = "f/ number",
+                resetKey = Unit,
                 modifier = Modifier.weight(1f),
             ) { v ->
                 update {
@@ -141,21 +143,19 @@ private fun LensEditor(state: DofState, index: Int, onClose: () -> Unit) {
                 }
             }
             NumberField(
-                label = "Narrowest",
+                label = "Narrowest f/",
                 value = lens.maxFStop,
-                resetKey = index,
-                supporting = "f/ number",
+                resetKey = Unit,
                 modifier = Modifier.weight(1f),
             ) { v ->
                 update { copy(maxFStop = v.coerceIn(minFStop, DofState.MAX_F)) }
             }
         }
 
-            SettingNote("Only the stops between these appear on the aperture scale.")
         }
 
         OutputCard(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 12.dp),
             title = "This lens",
             rows = listOf(
                 "Specification" to lens.specification,

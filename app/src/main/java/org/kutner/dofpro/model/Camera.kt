@@ -56,29 +56,6 @@ data class Camera(
 
     companion object {
         /**
-         * Sensor sizes from the reference manual's frame size table, offered as presets
-         * in the camera dialog.
-         */
-        val FRAME_PRESETS: List<Triple<String, Double, Double>> = listOf(
-            Triple("1/2.5\"", 5.76, 4.29),
-            Triple("1/2.3\"", 6.16, 4.62),
-            Triple("1/2\"", 6.4, 4.8),
-            Triple("1/1.7\"", 7.6, 5.7),
-            Triple("1/1.6\"", 8.0, 6.0),
-            Triple("1/1.3\"", 9.8, 7.35),
-            Triple("1\" (Nikon/Sony)", 13.2, 8.8),
-            Triple("4/3\" (Four Thirds)", 17.3, 13.0),
-            Triple("APS-C (Canon)", 22.5, 14.8),
-            Triple("APS-C (Nikon and others)", 23.6, 15.7),
-            Triple("35mm full frame", 36.0, 24.0),
-            Triple("6x4.5 medium format", 60.0, 45.0),
-            Triple("6x7 medium format", 70.0, 60.0),
-            Triple("4x5 large format", 127.0, 102.0),
-            Triple("5x7 large format", 178.0, 127.0),
-            Triple("8x10 large format", 254.0, 203.0),
-        )
-
-        /**
          * The bodies the app ships with: a starting point, not a catalogue.
          *
          * Every one of them can be renamed, retuned or deleted, and a camera not on the
@@ -90,8 +67,7 @@ data class Camera(
          *
          * The two APS-C entries differ because APS-C is not one size: Canon's is a little
          * smaller than everyone else's, and at the same pixel count that is a different
-         * pixel pitch and a different circle of confusion. Both sizes come straight from
-         * [FRAME_PRESETS], so a shipped camera always matches a named sensor in the editor.
+         * pixel pitch and a different circle of confusion.
          */
         fun defaults(): List<Camera> = listOf(
             Camera(

@@ -1,5 +1,6 @@
 package org.kutner.dofpro.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
@@ -76,14 +78,31 @@ fun <T> EquipmentManager(
     summaryOf: ((T) -> String)?,
     addLabel: String,
     onSelect: (Int) -> Unit,
-    /** Appends a new member and returns where it landed, so its form can be opened. */
-    onAdd: () -> Int,
+    /** A fresh member to start editing. Not added to anything: see [onSave]. */
+    newItem: () -> T,
+    /** Commits an edit. A null index means it is new and should be appended. */
+    onSave: (index: Int?, item: T) -> Unit,
     /** Removes several at once. Indices, and never all of them. */
     onRemove: (Set<Int>) -> Unit,
     onDismiss: () -> Unit,
-    editor: @Composable (index: Int, onClose: () -> Unit) -> Unit,
+    /**
+     * The form for one member, working on a copy.
+     *
+     * It is handed a value rather than an index, and hands one back, so nothing
+     * reaches the collection until [onSave]. That is what makes Cancel, Back and the
+     * X the same act — none of them has anything to undo — and what stops a new
+     * member existing before anyone has agreed to it.
+     */
+    editor: @Composable (
+        item: T,
+        canDelete: Boolean,
+        onSave: (T) -> Unit,
+        onDelete: () -> Unit,
+        onCancel: () -> Unit,
+    ) -> Unit,
 ) {
-    var editing by remember { mutableStateOf<Int?>(null) }
+    /** The member being edited: its place in the list, or null if it is new. */
+    var editing by remember { mutableStateOf<Pair<Int?, T>?>(null) }
     // Long press starts a selection, and while one is running a tap adds to it rather than
     // choosing a camera to shoot with. Two jobs for one gesture, told apart by whether a
     // selection is already under way — which is how every list on the phone behaves.
@@ -92,9 +111,24 @@ fun <T> EquipmentManager(
     val selecting = marked.isNotEmpty()
 
     val open = editing
-    if (open != null && open in items.indices) {
+    if (open != null) {
+        val (at, item) = open
         marked = emptySet()
-        editor(open) { editing = null }
+        editor(
+            item,
+            // Nothing to delete on something not in the list yet, and the last
+            // member cannot go: the app would have nothing to compute for.
+            at != null && items.size > 1,
+            { saved ->
+                onSave(at, saved)
+                editing = null
+            },
+            {
+                at?.let { onRemove(setOf(it)) }
+                editing = null
+            },
+            { editing = null },
+        )
         return
     }
 
@@ -141,7 +175,7 @@ fun <T> EquipmentManager(
         floatingActionButton = {
             if (!selecting) {
                 ExtendedFloatingActionButton(
-                    onClick = { editing = onAdd() },
+                    onClick = { editing = null to newItem() },
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                     text = { Text(addLabel) },
                 )
@@ -229,7 +263,7 @@ fun <T> EquipmentManager(
                             }
                         }
                         if (!selecting) {
-                            IconButton(onClick = { editing = index }) {
+                            IconButton(onClick = { editing = index to items[index] }) {
                                 Icon(Icons.Filled.Edit, contentDescription = "Edit")
                             }
                         }
@@ -265,23 +299,31 @@ fun <T> EquipmentManager(
 fun EquipmentEditor(
     title: String,
     canDelete: Boolean,
+    /** Removes the item *and* closes: the restore Cancel performs must not run. */
     onDelete: () -> Unit,
-    onClose: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
 
-    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // Back means cancel. Without this it falls through to whatever hosts the panel
+    // and closes the lot, which counts as neither keeping the edit nor discarding
+    // it — and left a half-filled new camera in the list.
+    BackHandler { onCancel() }
+
     Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
+        // A small bar, not a large one. The large title collapses on scroll, which is a
+        // fine thing on a screen you scroll and pure overhead on one meant to be read
+        // whole: it was spending nearly a sixth of the height saying a word already in
+        // the field below it.
         topBar = {
-            LargeTopAppBar(
-                title = { Text(title) },
-                scrollBehavior = scroll,
+            TopAppBar(
+                title = { Text(title, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onCancel) {
+                        Icon(Icons.Filled.Close, contentDescription = "Cancel")
                     }
                 },
                 actions = {
@@ -291,7 +333,30 @@ fun EquipmentEditor(
                 },
             )
         },
+        // Pinned rather than scrolled to: whether the edit is kept is the one decision
+        // this screen exists to take, and it should never be somewhere you have to go
+        // looking for it.
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) { Text("OK") }
+                }
+            }
+        },
     ) { padding ->
+        // Still scrollable. Everything here is sized to fit an ordinary phone without it,
+        // but a small screen, a large system font or a keyboard over half the display all
+        // make a scroll the difference between awkward and unusable.
         Column(
             Modifier
                 .fillMaxSize()
@@ -299,8 +364,6 @@ fun EquipmentEditor(
                 .verticalScroll(rememberScrollState()),
         ) {
             content()
-            // Room to scroll the last field clear of the keyboard.
-            Column(Modifier.padding(bottom = 24.dp)) {}
         }
     }
 
@@ -313,7 +376,6 @@ fun EquipmentEditor(
                 TextButton(onClick = {
                     confirmDelete = false
                     onDelete()
-                    onClose()
                 }) { Text("Delete") }
             },
             dismissButton = {
@@ -336,15 +398,15 @@ fun OutputCard(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(
                 title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 8.dp),
+                modifier = Modifier.padding(bottom = 4.dp),
             )
             rows.forEach { (label, value) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
                     Text(
                         label,
                         style = MaterialTheme.typography.bodyMedium,
@@ -366,6 +428,8 @@ fun NumberField(
     resetKey: Any,
     modifier: Modifier = Modifier,
     supporting: String? = null,
+    /** An explanation, offered as a question mark beside the label. */
+    help: String? = null,
     onValue: (Double) -> Unit,
 ) {
     var text by remember(resetKey, label) { mutableStateOf(formatSig(value, 6)) }
@@ -385,7 +449,18 @@ fun NumberField(
             text = entered
             entered.toDoubleOrNull()?.takeIf { it > 0.0 }?.let(onValue)
         },
-        label = { Text(label) },
+        // The badge sits on the label, so it names the field it explains without
+        // costing a row of its own or a second line under the number.
+        label = {
+            if (help == null) {
+                Text(label)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label)
+                    HelpBadge(help)
+                }
+            }
+        },
         supportingText = supporting?.let { { Text(it) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

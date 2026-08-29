@@ -45,41 +45,53 @@ fun CameraDialog(state: DofState, onDismiss: () -> Unit) {
         summaryOf = null,
         addLabel = "Add camera",
         onSelect = { state.cameraIndex = it },
-        onAdd = {
-            // Copying the current camera saves re-typing a sensor that is probably close.
-            state.cameras.add(state.camera.copy(name = "New camera"))
-            state.cameras.lastIndex
+        // Copying the current camera saves re-typing a sensor that is probably close.
+        // Nothing is added here: it becomes a camera only if the form is confirmed.
+        newItem = { state.camera.copy(name = "New camera") },
+        onSave = { at, camera ->
+            if (at == null) state.cameras.add(camera) else state.cameras[at] = camera
+            state.persist()
         },
         onRemove = { gone ->
             state.removeCameras(gone)
             state.persist()
         },
         onDismiss = onDismiss,
-        editor = { index, close -> CameraEditor(state, index, close) },
+        editor = { item, canDelete, onSave, onDelete, onCancel ->
+            CameraEditor(state, item, canDelete, onSave, onDelete, onCancel)
+        },
     )
 }
 
 @Composable
-private fun CameraEditor(state: DofState, index: Int, onClose: () -> Unit) {
-    val camera = state.cameras[index]
+private fun CameraEditor(
+    state: DofState,
+    initial: Camera,
+    canDelete: Boolean,
+    onSave: (Camera) -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    // A copy, edited here and handed back only if the form is confirmed. The collection
+    // is not touched until then, which is what makes Cancel, Back and the X all mean the
+    // same thing, and what keeps an abandoned new camera from ever existing.
+    var camera by remember { mutableStateOf(initial) }
 
     fun update(block: Camera.() -> Camera) {
-        state.cameras[index] = state.cameras[index].block()
+        camera = camera.block()
     }
 
     EquipmentEditor(
         title = camera.name.ifBlank { "Camera" },
-        canDelete = state.cameras.size > 1,
-        onDelete = {
-            state.cameras.removeAt(index)
-            state.cameraIndex = state.cameraIndex.coerceAtMost(state.cameras.lastIndex)
-        },
-        onClose = onClose,
+        canDelete = canDelete,
+        onDelete = onDelete,
+        onCancel = onCancel,
+        onConfirm = { onSave(camera) },
     ) {
         // The search comes first, above everything it fills in, because it is the way
         // most of this form gets completed — and a rule under it says plainly that what
         // follows is the same information by hand.
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp)) {
             CameraSearch { specs ->
                 update {
                     copy(
@@ -92,7 +104,7 @@ private fun CameraEditor(state: DofState, index: Int, onClose: () -> Unit) {
                     )
                 }
             }
-            HorizontalDivider(Modifier.padding(top = 16.dp))
+            HorizontalDivider(Modifier.padding(top = 10.dp))
         }
 
         SettingsGroup("Camera") {
@@ -119,22 +131,11 @@ private fun CameraEditor(state: DofState, index: Int, onClose: () -> Unit) {
         }
 
         SettingsGroup("Sensor") {
-            Picker(
-                label = "Frame size preset",
-                value = Camera.FRAME_PRESETS.firstOrNull {
-                    it.second == camera.frameWidthMm && it.third == camera.frameHeightMm
-                }?.first ?: "Custom",
-                options = Camera.FRAME_PRESETS.map { it.first },
-            ) { i ->
-                val preset = Camera.FRAME_PRESETS[i]
-                update { copy(frameWidthMm = preset.second, frameHeightMm = preset.third) }
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                NumberField("Frame width", camera.frameWidthMm, index, Modifier.weight(1f), "mm") {
+                NumberField("Width mm", camera.frameWidthMm, Unit, Modifier.weight(1f)) {
                     update { copy(frameWidthMm = it) }
                 }
-                NumberField("Frame height", camera.frameHeightMm, index, Modifier.weight(1f), "mm") {
+                NumberField("Height mm", camera.frameHeightMm, Unit, Modifier.weight(1f)) {
                     update { copy(frameHeightMm = it) }
                 }
             }
@@ -142,31 +143,32 @@ private fun CameraEditor(state: DofState, index: Int, onClose: () -> Unit) {
             if (camera.type == CameraType.DIGITAL) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     NumberField(
-                        "Width", camera.frameWidthPx.toDouble(), index, Modifier.weight(1f), "pixels",
+                        "Width px", camera.frameWidthPx.toDouble(), Unit, Modifier.weight(1f),
                     ) { update { copy(frameWidthPx = it.toInt().coerceAtLeast(1)) } }
                     NumberField(
-                        "Height", camera.frameHeightPx.toDouble(), index, Modifier.weight(1f), "pixels",
+                        "Height px", camera.frameHeightPx.toDouble(), Unit, Modifier.weight(1f),
                     ) { update { copy(frameHeightPx = it.toInt().coerceAtLeast(1)) } }
                 }
             } else {
                 NumberField(
-                    "Film resolution", camera.filmResolution, index, Modifier.fillMaxWidth(),
-                    "line pairs per mm",
+                    "Film resolution lp/mm", camera.filmResolution, Unit,
+                    Modifier.fillMaxWidth(),
                 ) { update { copy(filmResolution = it) } }
             }
-        }
 
-        SettingsGroup("Sensor detail") {
             NumberField(
-                "Wavelength", camera.wavelengthNm, index, Modifier.fillMaxWidth(),
-                "nm; 550 is green light, 900-1000 for infrared",
+                "Wavelength nm", camera.wavelengthNm, Unit, Modifier.fillMaxWidth(),
+                help = "The wavelength of light the diffraction calculation assumes. " +
+                    "550 nm is green, the middle of what the eye sees, and is right for " +
+                    "ordinary photography. Infrared work runs at 900-1000 nm, where " +
+                    "diffraction blurs almost twice as much at the same aperture.",
             ) { update { copy(wavelengthNm = it) } }
         }
 
         // What the camera alone settles. Whether any of it is *visible* depends on the
         // viewing target, which is a separate list and a separate question.
         OutputCard(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 5.dp, bottom = 12.dp),
             title = "Computed",
             rows = listOf(
                 "Pixel pitch" to "${formatSig(camera.pixelPitch, 3)} mm",
