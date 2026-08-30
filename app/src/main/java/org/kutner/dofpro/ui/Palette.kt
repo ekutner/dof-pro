@@ -26,11 +26,7 @@ object Palette {
     val Background: Color get() = tone(0xFF000000, 0xFFFFFFFF)
     val Panel: Color get() = tone(0xFF0A0A0A, 0xFFFCFCFC)
     val PanelBorder: Color get() = tone(0xFF3C3C3C, 0xFFC4C7CC)
-    val ToolBar: Color get() = tone(0xFF3C3C3C, 0xFFD5D8DD)
-    val ToolBarButton: Color get() = tone(0xFF505050, 0xFFBFC3C9)
-    val ToolBarButtonActive: Color get() = tone(0xFFF0F0F0, 0xFF2A2D31)
     val Text: Color get() = tone(0xFFFFFFFF, 0xFF15181B)
-    val DimText: Color get() = tone(0xFFBBBBBB, 0xFF5A5E63)
     val Tick: Color get() = tone(0xFFFFFFFF, 0xFF15181B)
 
     /** Headings naming what a scale's two sides measure; quieter than the graduations. */

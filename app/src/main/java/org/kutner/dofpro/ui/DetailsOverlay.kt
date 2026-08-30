@@ -704,7 +704,7 @@ private fun workingItems(state: DofState, result: DofResult): List<Detail> {
                 tail = plain(" , ${mm(cam.pixelPitch)} )"),
             )
             line("     = ${mm(target.allowableBlur, 3)} · " +
-                "${mm(maxOf(atSensor, cam.pixelPitch))}")
+                mm(maxOf(atSensor, cam.pixelPitch)))
             line("     = ${mm(state.coc)} mm")
         }
     }

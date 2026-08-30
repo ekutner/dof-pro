@@ -4,7 +4,6 @@ import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -19,7 +18,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import org.kutner.dofpro.model.DistanceFormat
 import org.kutner.dofpro.model.DistanceWindow
 import org.kutner.dofpro.model.DofState
@@ -170,7 +168,6 @@ private class Interaction(
     val onSubjectAnchor: (Double) -> Unit,
     val onHoldSpan: (Double) -> Unit,
     val onZoom: (Double, Double) -> Unit,
-    val onSettle: () -> Unit,
 )
 
 /**
@@ -214,7 +211,6 @@ fun DistanceScale(
     onHoldSpan: (Double) -> Unit = {},
     /** Pinch: above 1 is fingers spreading, which zooms in. */
     onZoom: (Double, Double) -> Unit = { _, _ -> },
-    onSettle: () -> Unit = {},
 ) {
     val axis = remember(window) { DistanceAxis(window) }
     val rightPaint = remember(fontPx) { textPaint(fontPx, Paint.Align.LEFT) }
@@ -235,7 +231,7 @@ fun DistanceScale(
         Interaction(
             axis, subjectRange, subject, near, far,
             onSubjectChange, onNearChange, onFarChange, onSubjectAnchorChange,
-            onHoldSpan, onZoom, onSettle,
+            onHoldSpan, onZoom,
         )
     )
     val grab = remember { DistanceGrab() }
