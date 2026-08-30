@@ -4,12 +4,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -17,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -141,6 +146,64 @@ fun SettingsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp),
                     )
+                }
+            }
+
+            SettingsCard {
+                val why = "Leaves diffraction out of the arithmetic, which is what " +
+                    "most other calculators do. Useful for comparing figures with them, " +
+                    "and otherwise best left off: it overstates the depth of field, " +
+                    "badly at small apertures, and hides the point past which stopping " +
+                    "down makes a picture worse."
+
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Ignore diffraction",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            // Only worth a badge while the setting is off. Once it is on
+                            // the same words are on screen in full, and a question mark
+                            // offering to explain what is already explained is noise.
+                            if (!state.ignoreDiffraction) HelpBadge(why)
+                        }
+                        Switch(
+                            checked = state.ignoreDiffraction,
+                            onCheckedChange = {
+                                state.ignoreDiffraction = it
+                                state.persist()
+                            },
+                        )
+                    }
+                    // Switched on, it stops being a preference and becomes something
+                    // wrong with the numbers: every figure on the main screen is now
+                    // optimistic, and nothing there says so. So the explanation comes
+                    // out from behind the badge and states itself as a warning.
+                    if (state.ignoreDiffraction) {
+                        Row(
+                            Modifier.padding(start = 4.dp, top = 6.dp, end = 4.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                why,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
             }
 

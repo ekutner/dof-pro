@@ -815,7 +815,7 @@ private fun ApertureColumn(
     fontPx: Float,
     modifier: Modifier,
 ) {
-    val wavelength = state.camera.wavelengthNm
+    val wavelength = state.wavelengthNm
     val coc = result.coc
 
     ScalePanel(
@@ -882,7 +882,7 @@ private fun DistanceColumn(
     val levels = (BLUR_TICK_LEVELS + sharpBlur).distinct().sorted()
     val blurTicks = levels.flatMap { level ->
         val budget = Dof.focusBlurBudget(
-            result.effectiveF, result.blurUnit, level, state.camera.wavelengthNm,
+            result.effectiveF, result.blurUnit, level, state.wavelengthNm,
         ) ?: return@flatMap emptyList()
         val l = result.effectiveFocal
         val n = Dof.nearLimit(l, result.effectiveF, result.subject, budget)
@@ -1057,7 +1057,7 @@ private fun DistanceColumn(
                 blurAt = { d ->
                     Dof.blurValue(
                         result.effectiveFocal, result.effectiveF, result.subject, d,
-                        result.coc, state.camera.wavelengthNm,
+                        result.coc, state.wavelengthNm,
                     )
                 },
                 fontPx = fontPx,

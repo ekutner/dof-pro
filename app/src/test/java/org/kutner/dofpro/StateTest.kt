@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.kutner.dofpro.calc.Dof
 import org.kutner.dofpro.model.ApertureStep
 import org.kutner.dofpro.model.Camera
 import org.kutner.dofpro.model.CameraType
@@ -1082,6 +1083,46 @@ class StateTest {
         val r = s.compute()
         val w = s.distanceWindow(r)
         return ln(r.far!! / r.near!!) / ln(w.hi / w.lo)
+    }
+
+    // ---- Ignoring diffraction -------------------------------------------------------
+
+    @Test
+    fun `ignoring diffraction reproduces the classical formula`() {
+        // The comparison the setting exists for: with diffraction out of the way the
+        // budget is the whole circle of confusion, which is what every calculator that
+        // omits it assumes.
+        val s = state()
+        s.changeFocalLength(16.0, settle = false)
+        s.fStop = 8.0
+        s.moveSubject(2000.0)
+        s.ignoreDiffraction = true
+        val r = s.compute()
+        val c = r.coc
+        assertEquals(Dof.hyperfocal(16.0, 8.0, c), r.hyperfocal, 1e-9)
+        assertEquals(Dof.nearLimit(16.0, 8.0, 2000.0, c), r.near!!, 1e-9)
+        assertEquals(Dof.farLimit(16.0, 8.0, 2000.0, c), r.far!!, 1e-9)
+        // And the blur at the subject is nothing at all: focus blur is zero where you
+        // focused, and there is no diffraction left to take its place.
+        assertEquals(0.0, r.blurAtSubject, 1e-12)
+    }
+
+    @Test
+    fun `ignoring diffraction removes every limit on stopping down`() {
+        val s = state()
+        s.ignoreDiffraction = true
+        // No aperture ever spends the circle of confusion on diffraction alone...
+        assertTrue(s.diffractionLimit.isInfinite())
+        // ...so stopping down never stops buying depth, and the widest view is the
+        // narrowest aperture the lens has.
+        assertEquals(s.apertureStops().last(), s.bestDepthFStop, 1e-12)
+    }
+
+    @Test
+    fun `the setting survives a round trip through the saved settings`() {
+        val s = state()
+        s.ignoreDiffraction = true
+        assertTrue(DofState(s.toSettings()).ignoreDiffraction)
     }
 
     // ---- Where the depth of field peaks ---------------------------------------------

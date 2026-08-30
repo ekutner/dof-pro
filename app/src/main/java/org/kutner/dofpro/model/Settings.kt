@@ -18,6 +18,8 @@ data class Settings(
     val units: UnitSystem = UnitSystem.METRIC,
     val theme: ThemeChoice = ThemeChoice.SYSTEM,
     val stacking: Boolean = false,
+    /** Leaves diffraction out of the arithmetic, to match calculators that do. */
+    val ignoreDiffraction: Boolean = false,
     /** Fraction of each frame's depth of field the next one doubles back over. */
     val stackOverlap: Double = DofState.DEFAULT_STACK_OVERLAP,
     val apertureStep: ApertureStep = ApertureStep.THIRD,
@@ -36,6 +38,7 @@ data class Settings(
         put("units", units.name)
         put("theme", theme.name)
         put("stacking", stacking)
+        put("ignoreDiffraction", ignoreDiffraction)
         put("stackOverlap", stackOverlap)
         put("apertureStep", apertureStep.name)
         put("teleconverter", teleconverter.name)
@@ -99,6 +102,8 @@ data class Settings(
                 units = UnitSystem.parse(o.optString("units"), d.units),
                 theme = enumOr(o.optString("theme"), d.theme),
                 stacking = o.optBoolean("stacking", d.stacking),
+                ignoreDiffraction =
+                    o.optBoolean("ignoreDiffraction", d.ignoreDiffraction),
                 stackOverlap = o.optDouble("stackOverlap", d.stackOverlap)
                     .coerceIn(0.0, DofState.MAX_STACK_OVERLAP),
                 apertureStep = enumOr(o.optString("apertureStep"), d.apertureStep),

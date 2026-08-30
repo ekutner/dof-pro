@@ -62,7 +62,18 @@ class DofState(settings: Settings = Settings()) {
         else (coc / target.allowableBlur.coerceAtLeast(1e-9)).coerceAtLeast(1e-6)
 
     /** The f stop at which diffraction blur alone reaches [coc]. */
-    val diffractionLimit: Double get() = Dof.fStopForDiffraction(coc, camera.wavelengthNm)
+    /**
+     * The wavelength the optics answer to, or zero when diffraction is being ignored.
+     *
+     * Zero rather than a flag threaded through every equation, because it is what the
+     * physics already says: Bd = f*(wl/550)/750, so a wavelength of nothing diffracts by
+     * nothing, the focus blur budget becomes the whole circle of confusion, and the
+     * aperture at which diffraction spends it recedes to infinity. Every formula keeps
+     * working without knowing the setting exists.
+     */
+    val wavelengthNm: Double get() = if (ignoreDiffraction) 0.0 else camera.wavelengthNm
+
+    val diffractionLimit: Double get() = Dof.fStopForDiffraction(coc, wavelengthNm)
 
     /** Deletes several viewing targets at once, never all of them. */
     fun removeTargets(indices: Set<Int>) {
@@ -121,6 +132,9 @@ class DofState(settings: Settings = Settings()) {
      * infinity, and the app works out how many frames it takes to get there.
      */
     var stacking by mutableStateOf(settings.stacking)
+
+    /** Leaves diffraction out of the arithmetic. See [wavelengthNm]. */
+    var ignoreDiffraction by mutableStateOf(settings.ignoreDiffraction)
 
     /** Fraction of each frame's depth of field the next one doubles back over. */
     var stackOverlap by mutableDoubleStateOf(settings.stackOverlap)
@@ -448,7 +462,7 @@ class DofState(settings: Settings = Settings()) {
         // How far each stop reaches: f·Bf, the term that places both limits.
         val reach = stops.map { stop ->
             val f = stop * teleconverter.factor
-            Dof.focusBlurBudget(f, coc, 1.0, camera.wavelengthNm)
+            Dof.focusBlurBudget(f, coc, 1.0, wavelengthNm)
                 ?.let { f * it } ?: Double.NEGATIVE_INFINITY
         }
         val peak = reach.indexOf(reach.max())
@@ -526,7 +540,7 @@ class DofState(settings: Settings = Settings()) {
     private fun computeFor(marked: Double): DofResult {
         val cam = camera
         val c = coc
-        val wl = cam.wavelengthNm
+        val wl = wavelengthNm
         val l = effectiveFocal
         val f = marked * teleconverter.factor
 
@@ -589,6 +603,7 @@ class DofState(settings: Settings = Settings()) {
         theme = theme,
         units = units,
         stacking = stacking,
+        ignoreDiffraction = ignoreDiffraction,
         stackOverlap = stackOverlap,
         apertureStep = apertureStep,
         teleconverter = teleconverter,

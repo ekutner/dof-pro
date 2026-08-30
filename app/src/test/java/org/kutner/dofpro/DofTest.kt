@@ -253,4 +253,34 @@ class DofTest {
         assertEquals(25.0, cam.actualFocalLength(50.0), 1e-9)
         assertEquals(50.0, cam.enteredFocalLength(25.0), 1e-9)
     }
+
+    // ---- Cross-check against an independent calculator ------------------------------
+
+    @Test
+    fun `with diffraction out of the way we match Cambridge in Colour`() {
+        // Their calculator, at a 710 cm print viewed from 50 cm, 35mm full frame, 16 mm,
+        // f/8, focused at 2 m, reports 1.75 m / 2.33 m and a hyperfocal of 13.98 m.
+        //
+        // Inverting the hyperfocal gives the circle of confusion their criterion implies,
+        // c = L^2 / (f * (H - L)). Given that same c and no diffraction, these equations
+        // land on their published figures to the millimetre - which says the difference
+        // between the two apps is entirely in what is fed to the formulas, never in the
+        // formulas themselves.
+        val l = 16.0
+        val f = 8.0
+        val a = 2000.0
+        val h = 13980.0
+        val c = l * l / (f * (h - l))
+
+        assertEquals(0.0022916, c, 1e-7)
+        assertEquals(13980.0, Dof.hyperfocal(l, f, c), 0.5)
+        assertEquals(1750.0, Dof.nearLimit(l, f, a, c), 5.0)
+        assertEquals(2330.0, Dof.farLimit(l, f, a, c), 5.0)
+
+        // With diffraction in play the same criterion gives noticeably more depth in
+        // front and much less behind, which is the whole disagreement.
+        val bf = Dof.focusBlurBudget(f, c, 1.0, 550.0)
+        assertTrue("diffraction alone already exceeds so strict a criterion", bf == null)
+    }
+
 }
