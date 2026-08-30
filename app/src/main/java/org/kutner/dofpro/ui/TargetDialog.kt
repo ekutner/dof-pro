@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.kutner.dofpro.model.DofState
 import org.kutner.dofpro.model.TargetKind
+import org.kutner.dofpro.model.UnitSystem
 import org.kutner.dofpro.model.ViewingTarget
 import org.kutner.dofpro.model.circleOfConfusion
 import org.kutner.dofpro.model.formatSig
@@ -75,6 +76,12 @@ private fun TargetEditor(
         target = target.block()
     }
 
+    // A print is 71 centimetres wide and seen from 50, not 710 millimetres from 500.
+    // The optics are in mm and stay that way; only the two fields anyone actually types
+    // into are converted, and only to the unit the rest of the app is already reading in.
+    val big = if (state.units == UnitSystem.METRIC) 10.0 else 25.4
+    val bigLabel = if (state.units == UnitSystem.METRIC) "cm" else "in"
+
     EquipmentEditor(
         title = target.name.ifBlank { "Viewing target" },
         canDelete = canDelete,
@@ -96,9 +103,10 @@ private fun TargetEditor(
         if (target.kind == TargetKind.PRINT || target.kind == TargetKind.SCREEN) {
             SettingsGroup(if (target.kind == TargetKind.PRINT) "The print" else "The screen") {
                 NumberField(
-                    if (target.kind == TargetKind.PRINT) "Print width mm" else "Screen width mm",
-                    target.widthMm, Unit, Modifier.fillMaxWidth(),
-                ) { update { copy(widthMm = it) } }
+                    (if (target.kind == TargetKind.PRINT) "Print width " else "Screen width ") +
+                        bigLabel,
+                    target.widthMm / big, Unit, Modifier.fillMaxWidth(),
+                ) { update { copy(widthMm = it * big) } }
 
                 if (target.kind == TargetKind.SCREEN) {
                     NumberField(
@@ -114,9 +122,9 @@ private fun TargetEditor(
                 if (target.kind != TargetKind.PIXELS) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         NumberField(
-                            "Viewed from mm", target.viewingDistanceMm, Unit,
+                            "Viewed from $bigLabel", target.viewingDistanceMm / big, Unit,
                             Modifier.weight(1f),
-                        ) { update { copy(viewingDistanceMm = it) } }
+                        ) { update { copy(viewingDistanceMm = it * big) } }
                         NumberField(
                             "Eyesight arcmin", target.visualResolution, Unit,
                             Modifier.weight(1f),

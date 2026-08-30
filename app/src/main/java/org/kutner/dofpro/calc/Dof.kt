@@ -16,22 +16,37 @@ import kotlin.math.sqrt
  */
 object Dof {
 
-    /** f stop at which diffraction blur equals 1mm, for 550nm green light: Bd = f/750. */
     private const val GREEN_NM = 550.0
-    private const val GREEN_DIVISOR = 750.0
+
+    /**
+     * The Airy disc is 2.44 * lambda * f across, measured to the first dark ring.
+     *
+     * Written this way rather than as the f/750 the reference manual quotes. 750 is that
+     * same figure rounded: 1 / (2.44 * 0.00055 mm) is 745.2, and calling it 750 overstates
+     * the aperture at which any given blur is reached by two thirds of a per cent. The
+     * rounding is invisible next to the other approximations in play, but it is the one
+     * number the details panel shows its reader, and a derivation that has to end in
+     * "near enough" is not a derivation.
+     */
+    private const val AIRY = 2.44
+
+    /** Millimetres per nanometre, since the optics are in mm and wavelengths in nm. */
+    private const val NM = 1e-6
 
     const val INF = Double.POSITIVE_INFINITY
 
     /**
-     * Diffraction blur in mm. Bd = f/750 for green light; blur scales linearly with
-     * wavelength, so red light diffracts ~20% more and blue ~20% less.
+     * Diffraction blur in mm: the Airy disc diameter, 2.44 * lambda * f.
+     *
+     * At 550 nm that is f/745. Blur scales linearly with wavelength, so red light
+     * diffracts about 20% more than green and blue about 20% less.
      */
     fun diffractionBlur(f: Double, wavelengthNm: Double = GREEN_NM): Double =
-        f * (wavelengthNm / GREEN_NM) / GREEN_DIVISOR
+        AIRY * wavelengthNm * NM * f
 
     /** The f stop at which diffraction blur equals [blur]. Inverse of [diffractionBlur]. */
     fun fStopForDiffraction(blur: Double, wavelengthNm: Double = GREEN_NM): Double =
-        blur * GREEN_DIVISOR * (GREEN_NM / wavelengthNm)
+        blur / (AIRY * wavelengthNm * NM)
 
     /** Focus blur in mm for a subject at [d] when focused at [a]. */
     fun focusBlur(l: Double, f: Double, a: Double, d: Double): Double {
@@ -103,7 +118,7 @@ object Dof {
      */
     fun bestFStop(l: Double, a: Double, dn: Double, wavelengthNm: Double = GREEN_NM): Double {
         if (a <= l || a <= dn) return Double.NaN
-        val k = (wavelengthNm / GREEN_NM) / GREEN_DIVISOR
+        val k = AIRY * wavelengthNm * NM
         return l * sqrt((a - dn) / (k * dn * (a - l)))
     }
 

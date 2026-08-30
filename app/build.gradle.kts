@@ -10,12 +10,12 @@ plugins {
 
 android {
     namespace = "org.kutner.dofpro"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "org.kutner.dofpro"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 3
         versionName = "1.2.0"
     }

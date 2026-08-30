@@ -35,6 +35,9 @@ object Palette {
 
     /** Headings naming what a scale's two sides measure; quieter than the graduations. */
     val AxisName: Color get() = tone(0xFF9AA0A6, 0xFF6B7075)
+
+    /** Text that acts like a link, in the blue the web has trained everyone to read as one. */
+    val Link: Color get() = tone(0xFF8AB4F8, 0xFF1155CC)
     val Marker: Color get() = tone(0xFFFF0000, 0xFFC70000)
     val MarkerLocked: Color get() = tone(0xFFFFFFFF, 0xFF2A2D31)
 

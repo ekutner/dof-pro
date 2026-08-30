@@ -1,6 +1,7 @@
 package org.kutner.dofpro.model
 
 import android.content.Context
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,6 +21,8 @@ data class Settings(
     val stacking: Boolean = false,
     /** Leaves diffraction out of the arithmetic, to match calculators that do. */
     val ignoreDiffraction: Boolean = false,
+    /** Whether the details panel opens with the derivation already unfolded. */
+    val showMath: Boolean = false,
     /** Fraction of each frame's depth of field the next one doubles back over. */
     val stackOverlap: Double = DofState.DEFAULT_STACK_OVERLAP,
     val apertureStep: ApertureStep = ApertureStep.THIRD,
@@ -39,6 +42,7 @@ data class Settings(
         put("theme", theme.name)
         put("stacking", stacking)
         put("ignoreDiffraction", ignoreDiffraction)
+        put("showMath", showMath)
         put("stackOverlap", stackOverlap)
         put("apertureStep", apertureStep.name)
         put("teleconverter", teleconverter.name)
@@ -58,10 +62,9 @@ data class Settings(
         }
 
         fun save(context: Context, settings: Settings) {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY, settings.toJson().toString())
-                .apply()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                putString(KEY, settings.toJson().toString())
+            }
         }
 
         private fun fromJson(o: JSONObject): Settings {
@@ -104,6 +107,7 @@ data class Settings(
                 stacking = o.optBoolean("stacking", d.stacking),
                 ignoreDiffraction =
                     o.optBoolean("ignoreDiffraction", d.ignoreDiffraction),
+                showMath = o.optBoolean("showMath", d.showMath),
                 stackOverlap = o.optDouble("stackOverlap", d.stackOverlap)
                     .coerceIn(0.0, DofState.MAX_STACK_OVERLAP),
                 apertureStep = enumOr(o.optString("apertureStep"), d.apertureStep),

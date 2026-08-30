@@ -136,11 +136,19 @@ class DofState(settings: Settings = Settings()) {
     /** Leaves diffraction out of the arithmetic. See [wavelengthNm]. */
     var ignoreDiffraction by mutableStateOf(settings.ignoreDiffraction)
 
+    /**
+     * Whether the details panel shows the derivation.
+     *
+     * Kept here rather than in the panel so it survives closing it. Somebody who wants to
+     * see the working usually wants to see it again, and somebody who does not should not
+     * have to fold it away twice.
+     */
+    var showMath by mutableStateOf(settings.showMath)
+
     /** Fraction of each frame's depth of field the next one doubles back over. */
     var stackOverlap by mutableDoubleStateOf(settings.stackOverlap)
     var apertureStep by mutableStateOf(settings.apertureStep)
     var teleconverter by mutableStateOf(settings.teleconverter)
-    var showDetails by mutableStateOf(false)
 
     /**
      * Writes the configuration out. Set by the activity; called whenever equipment or a
@@ -406,14 +414,16 @@ class DofState(settings: Settings = Settings()) {
     // ---- Snapping ----------------------------------------------------------------
 
     /** Rounds to roughly three significant digits, so 15.02 lands cleanly on 15.0. */
-    private fun snapNice(v: Double, minStep: Double = 0.0): Double {
+    private fun snapNice(v: Double): Double {
         if (v <= 0.0 || !v.isFinite()) return v
-        val step = maxOf(10.0.pow(floor(log10(v))) / 10.0, minStep)
+        // Never finer than a whole millimetre: below 10 mm the readable-number rule would
+        // otherwise step in tenths, and no lens is marked that way.
+        val step = maxOf(10.0.pow(floor(log10(v))) / 10.0, 1.0)
         return (v / step).roundToInt() * step
     }
 
     /** A whole number of millimetres; below 10 mm the tenths step would be finer. */
-    fun snapFocal(v: Double): Double = snapNice(v, 1.0).coerceIn(MIN_FOCAL, MAX_FOCAL)
+    fun snapFocal(v: Double): Double = snapNice(v).coerceIn(MIN_FOCAL, MAX_FOCAL)
 
     /** The aperture always lands on a real f stop, dragged or calculated. */
     fun snapFStop(v: Double): Double = nearestFStop(v.coerceIn(MIN_F, MAX_F))
@@ -482,7 +492,7 @@ class DofState(settings: Settings = Settings()) {
     /**
      * The last stop on this lens that still has a depth of field, or null if none has.
      *
-     * The camera's [Camera.diffractionLimit] is the exact f number where diffraction alone
+     * [diffractionLimit] is the exact f number where diffraction alone
      * spends the whole circle of confusion — f/23.6 on 35mm film. It belongs in the details
      * and in the camera editor, where it describes the body. It does not belong in a notice
      * on the main screen: no lens has an f/23.6 to be set to, so quoting it there names a
@@ -511,10 +521,6 @@ class DofState(settings: Settings = Settings()) {
     val effectiveFocal: Double
         get() = camera.actualFocalLength(focalLength) * teleconverter.factor
 
-    /** f stop fed to the equations: a 2X teleconverter turns f/16 into f/32. */
-    val effectiveFStop: Double
-        get() = fStop * teleconverter.factor
-
     /** Image size over subject size at the sensor. */
     val magnification: Double
         get() {
@@ -538,7 +544,6 @@ class DofState(settings: Settings = Settings()) {
 
     /** The depth of field a given marked f stop would produce, everything else unchanged. */
     private fun computeFor(marked: Double): DofResult {
-        val cam = camera
         val c = coc
         val wl = wavelengthNm
         val l = effectiveFocal
@@ -604,6 +609,7 @@ class DofState(settings: Settings = Settings()) {
         units = units,
         stacking = stacking,
         ignoreDiffraction = ignoreDiffraction,
+        showMath = showMath,
         stackOverlap = stackOverlap,
         apertureStep = apertureStep,
         teleconverter = teleconverter,

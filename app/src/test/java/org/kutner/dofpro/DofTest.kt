@@ -112,8 +112,11 @@ class DofTest {
     // ---- Appendix C identities ----------------------------------------------------
 
     @Test
-    fun `diffraction blur is f over 750 for green light`() {
-        assertEquals(8.0 / 750.0, Dof.diffractionBlur(8.0, green), 1e-12)
+    fun `diffraction blur is the Airy disc, 2 point 44 lambda f`() {
+        // f/745 at 550 nm. The reference manual rounds that to f/750; this does not,
+        // because the details panel shows its reader the derivation.
+        assertEquals(2.44 * 550e-6 * 8.0, Dof.diffractionBlur(8.0, green), 1e-12)
+        assertEquals(8.0 / 745.2, Dof.diffractionBlur(8.0, green), 1e-6)
         // Red light diffracts about 20% more than green.
         assertTrue(Dof.diffractionBlur(8.0, 660.0) > Dof.diffractionBlur(8.0, green) * 1.19)
     }

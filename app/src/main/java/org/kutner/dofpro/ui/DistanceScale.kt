@@ -194,16 +194,16 @@ fun DistanceScale(
     blurTicks: List<Pair<Double, Double>>,
     /** The blur reading at the depth of field limits — the camera's allowable blur. */
     sharpBlur: Double,
+    coneKey: Any,
+    blurAt: (Double) -> Double,
+    fontPx: Float,
+    modifier: Modifier = Modifier,
     /**
      * Where to focus each frame of a focus stack, empty when not stacking. When there is
      * a stack, the cone, the blur graduations and the red limits all describe one frame
      * rather than the set, so they stand down and this takes the scale.
      */
     stackPoints: List<Double> = emptyList(),
-    coneKey: Any,
-    blurAt: (Double) -> Double,
-    fontPx: Float,
-    modifier: Modifier = Modifier,
     subjectRange: ClosedFloatingPointRange<Double> =
         DofState.MIN_DISTANCE..DofState.MAX_DISTANCE,
     onSubjectChange: (Double) -> Unit = {},

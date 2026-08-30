@@ -151,7 +151,7 @@ class StateTest {
         assertEquals(4.0, s.fStop, 1e-9)
 
         // Pulling it far enough lands on the next half stop, not somewhere between.
-        s.dragNearLimit(start.near!! * 0.7)
+        s.dragNearLimit(start.near * 0.7)
         assertNotEquals(4.0, s.fStop, 1e-9)
         val stops = s.apertureStops()
         assertTrue(stops.any { abs(it - s.fStop) < 1e-9 })
@@ -554,11 +554,15 @@ class StateTest {
                     frameHeightPx = 6336,
                 ),
             ),
-            lenses = listOf(Lens("100-400", 100.0, 400.0, 5.6, 32.0)),
+            lenses = listOf(Lens("100-400", 100.0, 400.0, 4.0, 32.0)),
             targets = listOf(ViewingTarget(kind = TargetKind.PIXELS)),
             focalLength = 100.0,
-            fStop = 5.6,
-            subject = 2000.0,
+            // f/5 rather than f/5.6. Judged at pixel level this body is diffraction
+            // limited at f/5.598, so f/5.6 sits three hundredths of a per cent the wrong
+            // side of it and has no depth of field at all to give these tests a quarter
+            // of. A fixture that close to a cliff measures the cliff, not the rule.
+            fStop = 5.0,
+            subject = 1500.0,
             units = org.kutner.dofpro.model.UnitSystem.METRIC,
         )
     )
@@ -599,8 +603,8 @@ class StateTest {
         s.targets[0] = s.targets[0].copy(allowableBlur = 5.0)
         assertTrue(s.diffractionLimit > 11.0)
         val r = s.compute()
-        assertTrue(r.near != null && r.near!! < r.subject)
-        assertTrue(r.far != null && r.far!! > r.subject)
+        assertTrue(r.near != null && r.near < r.subject)
+        assertTrue(r.far != null && r.far > r.subject)
     }
 
     @Test
@@ -1367,7 +1371,7 @@ class StateTest {
         // Holding it, without pinching, cannot break out of that.
         s.holdDistanceSpan(ln(w.hi / w.lo))
         val held = s.distanceWindow(s.compute())
-        assertEquals(0.25, ln(r.far!! / r.near!!) / ln(held.hi / held.lo), 1e-9)
+        assertEquals(0.25, ln(r.far / r.near) / ln(held.hi / held.lo), 1e-9)
     }
 
     // ---- Pinch -------------------------------------------------------------------
@@ -1469,17 +1473,17 @@ class StateTest {
         for (stop in listOf(2.8, 5.6, 11.0, 16.0)) {
             s.fStop = stop
             val r = s.compute()
-            val budget = org.kutner.dofpro.calc.Dof.focusBlurBudget(
+            val budget = Dof.focusBlurBudget(
                 r.effectiveF, r.coc, 1.0, s.camera.wavelengthNm,
             )!!
             assertEquals(
                 r.near!!,
-                org.kutner.dofpro.calc.Dof.nearLimit(r.effectiveFocal, r.effectiveF, r.subject, budget),
+                Dof.nearLimit(r.effectiveFocal, r.effectiveF, r.subject, budget),
                 1e-9,
             )
             assertEquals(
                 r.far!!,
-                org.kutner.dofpro.calc.Dof.farLimit(r.effectiveFocal, r.effectiveF, r.subject, budget),
+                Dof.farLimit(r.effectiveFocal, r.effectiveF, r.subject, budget),
                 1e-9,
             )
         }
